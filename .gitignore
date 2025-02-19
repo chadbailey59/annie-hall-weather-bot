@@ -8,3 +8,4 @@ venv/
 
 .DS_Store
 client/javascript/node_modules/*
+client/javascript/dist/*
