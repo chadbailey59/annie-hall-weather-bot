@@ -1,42 +1,41 @@
-import aiohttp
 import asyncio
 import os
 import sys
-import json
 
-from loguru import logger
+import aiohttp
 from dotenv import load_dotenv
-
+from loguru import logger
 from noaa_sdk import NOAA
-
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
-    Frame,
     EndFrame,
+    Frame,
     LLMTextFrame,
 )
-from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.pipeline.parallel_pipeline import ParallelPipeline
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
-from pipecat.services.gemini_multimodal_live.gemini import (
-    GeminiMultimodalModalities,
-    GeminiMultimodalLiveLLMService,
-)
-from pipecat.services.google import GoogleLLMService
-from pipecat.transports.services.daily import DailyParams, DailyTransport
-from pipecat.transports.services.helpers.daily_rest import DailyRESTHelper, DailyRoomParams
-
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIProcessor
+from pipecat.services.gemini_multimodal_live.gemini import (
+    GeminiMultimodalLiveLLMService,
+    GeminiMultimodalModalities,
+)
+from pipecat.transports.services.daily import DailyParams, DailyTransport
+from pipecat.transports.services.helpers.daily_rest import (
+    DailyRESTHelper,
+    DailyRoomParams,
+)
 
 logger.remove(0)
 logger.add(sys.stderr, level="DEBUG", colorize=True)
 load_dotenv()
 new_level_symbol = ".  ⛅︎  ."
 new_level = logger.level(new_level_symbol, no=38, color="<light-magenta><BLACK>")
+
 
 class annieSubtitler(FrameProcessor):
     def __init__(self):
@@ -53,6 +52,7 @@ class annieSubtitler(FrameProcessor):
             await self.push_frame(frame)
         else:
             await self.push_frame(frame, direction)
+
 
 # webrtc room to talk to the bot
 async def get_daily_room():
@@ -71,6 +71,7 @@ async def get_daily_room():
                 DailyRoomParams(properties={"enable_prejoin_ui": False})
             )
             return room_config.url
+
 
 async def get_noaa_simple_weather(latitude: float, longitude: float, **kwargs):
     logger.log(new_level_symbol, f"get_noaa_simple_weather for: '{latitude}, {longitude}'")
@@ -95,9 +96,8 @@ async def get_noaa_simple_weather(latitude: float, longitude: float, **kwargs):
     )
     return description, fahrenheit_temp
 
-async def fetch_weather_from_api(
-    function_name, tool_call_id, args, llm, context, result_callback
-):
+
+async def fetch_weather_from_api(function_name, tool_call_id, args, llm, context, result_callback):
     logger.log(new_level_symbol, f"fetch_weather_from_api * args: {args}")
     location = args["location"]
     latitude = float(args["latitude"])
@@ -121,30 +121,31 @@ async def fetch_weather_from_api(
             f"According to noah, the weather in {location} is currently {round(fahrenheit_temp)} degrees."
         )
     else:
-        logger.log(new_level_symbol, f"awaiting result_callback...")
+        logger.log(new_level_symbol, "awaiting result_callback...")
         await result_callback(
             f"According to noah, the weather in {location} is currently {round(fahrenheit_temp)} degrees and {description}."
         )
 
-async def main():
+
+async def bot():
     bot_name = "⛅︎ annie hall weather bot ⛅︎"
     room_url = await get_daily_room()
 
     # yes, it was worth the time to do this
-    logger.opt(colors=True).log(new_level_symbol, f"<black><RED>_____*</RED></black>")
-    logger.opt(colors=True).log(new_level_symbol, f"<black><LIGHT-RED>_____*</LIGHT-RED></black>")
-    logger.opt(colors=True).log(new_level_symbol, f"<black><Y>_____*</Y></black>")
-    logger.opt(colors=True).log(new_level_symbol, f"<black><G>_____*</G></black> Navigate to")
+    logger.opt(colors=True).log(new_level_symbol, "<black><RED>_____*</RED></black>")
+    logger.opt(colors=True).log(new_level_symbol, "<black><LIGHT-RED>_____*</LIGHT-RED></black>")
+    logger.opt(colors=True).log(new_level_symbol, "<black><Y>_____*</Y></black>")
+    logger.opt(colors=True).log(new_level_symbol, "<black><G>_____*</G></black> Navigate to")
     logger.opt(colors=True).log(
         new_level_symbol, f"<black><C>_____*</C></black> <u><light-cyan>{room_url}</light-cyan></u>"
     )
-    logger.opt(colors=True).log(new_level_symbol, f"<black><E>_____*</E></black> to talk to")
+    logger.opt(colors=True).log(new_level_symbol, "<black><E>_____*</E></black> to talk to")
     logger.opt(colors=True).log(
         new_level_symbol,
         f"<black><LIGHT-BLUE>_____*</LIGHT-BLUE></black> <light-blue>{bot_name}</light-blue>",
     )
-    logger.opt(colors=True).log(new_level_symbol, f"<black><MAGENTA>_____*</MAGENTA></black>")
-    logger.opt(colors=True).log(new_level_symbol, f"<black><R>_____*</R></black>")
+    logger.opt(colors=True).log(new_level_symbol, "<black><MAGENTA>_____*</MAGENTA></black>")
+    logger.opt(colors=True).log(new_level_symbol, "<black><R>_____*</R></black>")
 
     # transport
     transport = DailyTransport(
@@ -276,19 +277,19 @@ async def main():
                 [
                     # handles tool call and actually says the weather in audio
                     context_aggregator.user(),  # User responses
-                    llm, # voice weather bot llm
+                    llm,  # voice weather bot llm
                 ],
-                [ 
+                [
                     # makes snarky remarks in text
                     annie_context_aggregator.user(),  # User responses
-                    annie_hallm, # subtitle llm
-                    annie_text_subtitles, # prep subtitle text for front end
-                    rtvi, # send subtitles to front end client
-                ]
+                    annie_hallm,  # subtitle llm
+                    annie_text_subtitles,  # prep subtitle text for front end
+                    rtvi,  # send subtitles to front end client
+                ],
             ),
             transport.output(),  # Transport bot output
             context_aggregator.assistant(),  # Assistant spoken responses
-            annie_context_aggregator.assistant(), # Assistant text responses
+            annie_context_aggregator.assistant(),  # Assistant text responses
         ]
     )
 
@@ -321,4 +322,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(bot())

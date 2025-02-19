@@ -4,14 +4,13 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
-"""RTVI Bot Server Implementation.
+"""Pipecat Cloud Bot Server Implementation.
 
-This FastAPI server manages RTVI bot instances and provides endpoints for both
-direct browser access and RTVI client connections. It handles:
-- Creating Daily rooms
-- Managing bot processes
-- Providing connection credentials
-- Monitoring bot status
+This FastAPI server is an MVP of sorts for Pipecat Cloud web clients. It has two important endpoints:
+- POST /connect: Point an RTVI-compatible frontend at this endpoint to connect to a bot.
+- GET /direct: Direct browser access to a bot via Daily Prebuilt.
+
+The API also serves anything in /public, so you can include simple web clients there.
 
 Requirements:
 - Daily API key (set in .env file)
@@ -21,7 +20,6 @@ Requirements:
 
 import argparse
 import os
-import subprocess
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
@@ -30,8 +28,10 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
-
-from pipecat.transports.services.helpers.daily_rest import DailyRESTHelper, DailyRoomParams
+from pipecat.transports.services.helpers.daily_rest import (
+    DailyRESTHelper,
+    DailyRoomParams,
+)
 
 # Load environment variables from .env file
 load_dotenv(override=True)
@@ -109,7 +109,38 @@ async def create_room_and_token() -> tuple[str, str]:
     return room.url, token
 
 
-@app.get("/")
+async def start_bot() -> tuple[str, str]:
+    """Start a bot process."""
+    # room_url = os.getenv("DAILY_SAMPLE_ROOM_URL")
+    # token = os.getenv("DAILY_SAMPLE_ROOM_TOKEN")
+    # if not room_url:
+    #     print("Creating room")
+    #     room_url, token = await create_room_and_token()
+    #     print(f"Room URL: {room_url}")
+
+    # THIS IS WHERE we start a bot process
+    aiohttp_session = aiohttp.ClientSession()
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {os.getenv('PCC_API_KEY')}",
+    }
+    params = {"createDailyRoom": True}
+    print(f"Headers is {headers}, json is {params}")
+    async with aiohttp_session.post(
+        os.getenv("PCC_BOT_START_URL"), headers=headers, json=params
+    ) as r:
+        if r.status != 200:
+            text = await r.text()
+            raise Exception(f"Unable to create room (status: {r.status}): {text}")
+
+        data = await r.json()
+        room_url = data["dailyRoom"]
+        token = data["dailyToken"]
+
+    return (room_url, token)
+
+
+@app.get("/direct")
 async def start_agent(request: Request):
     """Endpoint for direct browser access to the bot.
 
@@ -121,32 +152,8 @@ async def start_agent(request: Request):
     Raises:
         HTTPException: If room creation, token generation, or bot startup fails
     """
-    room_url = os.getenv("DAILY_SAMPLE_ROOM_URL")
-    if not room_url:
-        print("Creating room")
-        room_url, token = await create_room_and_token()
-        print(f"Room URL: {room_url}")
 
-    # Check if there is already an existing process running in this room
-    num_bots_in_room = sum(
-        1 for proc in bot_procs.values() if proc[1] == room_url and proc[0].poll() is None
-    )
-    if num_bots_in_room >= MAX_BOTS_PER_ROOM:
-        raise HTTPException(status_code=500, detail=f"Max bot limit reached for room: {room_url}")
-
-    # Spawn a new bot process
-    try:
-        bot_file = "annie-hall"
-        proc = subprocess.Popen(
-            [f"DAILY_ROOM={room_url} python -m {bot_file}"],
-            shell=True,
-            bufsize=1,
-            cwd=os.path.dirname(os.path.abspath(__file__)),
-        )
-        bot_procs[proc.pid] = (proc, room_url)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start subprocess: {e}")
-
+    room_url, token = await start_bot()
     return RedirectResponse(room_url)
 
 
@@ -162,25 +169,8 @@ async def rtvi_connect(request: Request) -> Dict[Any, Any]:
     Raises:
         HTTPException: If room creation, token generation, or bot startup fails
     """
-    room_url = os.getenv("DAILY_SAMPLE_ROOM_URL")
-    token = "token"
-    if not room_url:
-        print("Creating room")
-        room_url, token = await create_room_and_token()
-        print(f"Room URL: {room_url}")
 
-    # Start the bot process
-    try:
-        bot_file = "annie-hall"
-        proc = subprocess.Popen(
-            [f"DAILY_ROOM={room_url} python -m {bot_file}"],
-            shell=True,
-            bufsize=1,
-            cwd=os.path.dirname(os.path.abspath(__file__)),
-        )
-        bot_procs[proc.pid] = (proc, room_url)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start subprocess: {e}")
+    room_url, token = await start_bot()
 
     # Return the authentication bundle in format expected by DailyTransport
     return {"room_url": room_url, "token": token}
