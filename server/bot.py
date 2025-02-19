@@ -1,8 +1,8 @@
+import argparse
 import asyncio
 import os
 import sys
 
-import aiohttp
 from dotenv import load_dotenv
 from loguru import logger
 from noaa_sdk import NOAA
@@ -25,10 +25,6 @@ from pipecat.services.gemini_multimodal_live.gemini import (
     GeminiMultimodalModalities,
 )
 from pipecat.transports.services.daily import DailyParams, DailyTransport
-from pipecat.transports.services.helpers.daily_rest import (
-    DailyRESTHelper,
-    DailyRoomParams,
-)
 
 logger.remove(0)
 logger.add(sys.stderr, level="DEBUG", colorize=True)
@@ -52,25 +48,6 @@ class annieSubtitler(FrameProcessor):
             await self.push_frame(frame)
         else:
             await self.push_frame(frame, direction)
-
-
-# webrtc room to talk to the bot
-async def get_daily_room():
-    room_override = os.getenv("DAILY_ROOM")
-    if room_override:
-        return room_override
-    else:
-        async with aiohttp.ClientSession() as session:
-            daily_rest_helper = DailyRESTHelper(
-                daily_api_key=os.getenv("DAILY_API_KEY"),
-                daily_api_url=os.getenv("DAILY_API_URL", "https://api.daily.co/v1"),
-                aiohttp_session=session,
-            )
-
-            room_config = await daily_rest_helper.create_room(
-                DailyRoomParams(properties={"enable_prejoin_ui": False})
-            )
-            return room_config.url
 
 
 async def get_noaa_simple_weather(latitude: float, longitude: float, **kwargs):
@@ -127,9 +104,9 @@ async def fetch_weather_from_api(function_name, tool_call_id, args, llm, context
         )
 
 
-async def bot():
+async def main(room_url, daily_token):
     bot_name = "⛅︎ annie hall weather bot ⛅︎"
-    room_url = await get_daily_room()
+    # room_url = await get_daily_room()
 
     # yes, it was worth the time to do this
     logger.opt(colors=True).log(new_level_symbol, "<black><RED>_____*</RED></black>")
@@ -150,7 +127,7 @@ async def bot():
     # transport
     transport = DailyTransport(
         room_url,
-        None,
+        daily_token,
         bot_name,
         DailyParams(
             audio_in_sample_rate=16000,
@@ -321,5 +298,14 @@ async def bot():
     await runner.run(task)
 
 
+async def bot(data, daily_room, daily_token):
+    await main(daily_room, daily_token)
+
+
 if __name__ == "__main__":
-    asyncio.run(bot())
+    parser = argparse.ArgumentParser(description="Daily Storyteller Bot")
+    parser.add_argument("-u", type=str, help="Room URL")
+    parser.add_argument("-t", type=str, help="Token")
+    config = parser.parse_args()
+
+    asyncio.run(main(config.u, config.t))
